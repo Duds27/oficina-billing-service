@@ -1,0 +1,27 @@
+# Build stage
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+# Arquivos de projeto primeiro, para aproveitar o cache do restore
+COPY global.json Directory.Build.props Directory.Packages.props ./
+COPY src/Directory.Build.props src/
+COPY src/Oficina.Billing.Domain/Oficina.Billing.Domain.csproj src/Oficina.Billing.Domain/
+COPY src/Oficina.Billing.Application/Oficina.Billing.Application.csproj src/Oficina.Billing.Application/
+COPY src/Oficina.Billing.Infrastructure/Oficina.Billing.Infrastructure.csproj src/Oficina.Billing.Infrastructure/
+COPY src/Oficina.Billing.API/Oficina.Billing.API.csproj src/Oficina.Billing.API/
+RUN dotnet restore src/Oficina.Billing.API/Oficina.Billing.API.csproj
+
+COPY src/ src/
+RUN dotnet publish src/Oficina.Billing.API/Oficina.Billing.API.csproj -c Release -o /publish --no-restore
+
+# Runtime stage
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+WORKDIR /app
+COPY --from=build /publish .
+
+# Usuário não-root 'app' (UID 1654), já presente nas imagens .NET 8.
+# A instrumentação do New Relic (agente ou OpenTelemetry) entra na Etapa 5, conforme o spike S2.
+USER $APP_UID
+
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "Oficina.Billing.API.dll"]
