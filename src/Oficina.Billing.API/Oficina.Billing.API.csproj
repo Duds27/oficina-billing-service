@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Oficina.Billing.Application\Oficina.Billing.Application.csproj" />
+    <ProjectReference Include="..\Oficina.Billing.Infrastructure\Oficina.Billing.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>
