@@ -33,3 +33,8 @@ dotnet_naming_style.underscore_camel.required_prefix = _
 
 # ConfigureAwait é desnecessário em ASP.NET Core (não há SynchronizationContext)
 dotnet_diagnostic.CA2007.severity = none
+
+# Migrations do EF Core: código gerado, fora das regras de estilo.
+[src/Oficina.Billing.Infrastructure/Persistence/Migrations/*.cs]
+generated_code = true
+dotnet_analyzer_diagnostic.severity = none

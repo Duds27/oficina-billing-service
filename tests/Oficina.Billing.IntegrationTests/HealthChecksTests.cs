@@ -1,15 +1,28 @@
 using System.Net;
-using Microsoft.AspNetCore.Mvc.Testing;
+using Oficina.Billing.IntegrationTests.Infraestrutura;
 
 namespace Oficina.Billing.IntegrationTests;
 
-public class HealthChecksTests : IClassFixture<WebApplicationFactory<Program>>
+[Collection(ColecaoPostgres.Nome)]
+public sealed class HealthChecksTests : IAsyncLifetime
 {
-    private readonly HttpClient _client;
+    private readonly PostgresFixture _postgres;
+    private ApiFactory _factory = null!;
+    private HttpClient _client = null!;
 
-    public HealthChecksTests(WebApplicationFactory<Program> factory)
+    public HealthChecksTests(PostgresFixture postgres) => _postgres = postgres;
+
+    public Task InitializeAsync()
     {
-        _client = factory.CreateClient();
+        _factory = new ApiFactory(_postgres.NovoBanco());
+        _client = _factory.CreateClient();
+        return Task.CompletedTask;
+    }
+
+    public async Task DisposeAsync()
+    {
+        _client.Dispose();
+        await _factory.DisposeAsync();
     }
 
     [Theory]
@@ -31,5 +44,18 @@ public class HealthChecksTests : IClassFixture<WebApplicationFactory<Program>>
         var resposta = await _client.SendAsync(requisicao);
 
         Assert.Equal("teste-123", resposta.Headers.GetValues("X-Correlation-ID").Single());
+    }
+
+    [Fact]
+    public async Task Ready_responde_503_sem_banco()
+    {
+        await using var semBanco = new ApiFactory("Host=127.0.0.1;Port=1;Database=x;Username=x;Password=x;Timeout=2")
+        {
+            Configuracoes = { ["Database:AplicarMigrations"] = "false" }
+        };
+        using var client = semBanco.CreateClient();
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await client.GetAsync("/health/ready")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health/live")).StatusCode);
     }
 }
