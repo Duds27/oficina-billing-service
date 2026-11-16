@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cobertura de código dos testes (coverlet). Uso:
+    dotnet test - -settings coverlet.runsettings
+  Exclusão documentada (docs/fase4/README.md, seção 8): só as migrations do EF Core, que são
+  código gerado pelo dotnet ef. Program.cs e DTOs continuam contando.
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <Include>[Oficina.Billing.*]*</Include>
+          <ExcludeByFile>**/Persistence/Migrations/*.cs</ExcludeByFile>
+          <!-- Sem CompilerGeneratedAttribute: o corpo dos métodos async fica numa classe gerada pelo compilador. -->
+          <ExcludeByAttribute>GeneratedCodeAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+          <SkipAutoProps>true</SkipAutoProps>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>
