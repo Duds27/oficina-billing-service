@@ -1,0 +1,17 @@
+# Roda o billing-service junto com o os-service, no mesmo RabbitMQ.
+#
+# 1. No repositório oficina-os-service (pasta OficinaMecanicaBackend): docker compose up --build
+# 2. Aqui: docker compose -f docker-compose.yml -f docker-compose.integrado.yml up --build billing-api billing-db
+#
+# O billing-service deixa de subir o próprio RabbitMQ e usa o do os-service, publicado no host
+# (mesmo usuário, senha e vhost). Com o gateway Fake, o pagamento é simulado por
+# POST http://localhost:8082/dev/pagamentos/{id}/simular?resultado=aprovado
+services:
+  billing-api:
+    environment:
+      RabbitMq__Host: host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: !override
+      billing-db:
+        condition: service_healthy
