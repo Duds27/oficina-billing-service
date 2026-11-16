@@ -16,6 +16,7 @@ public static class DependencyInjection
         services.AddScoped<EstornoAutomatico>();
         services.AddScoped<ComandosSagaUseCases>();
         services.AddScoped<PagamentosUseCases>();
+        services.AddScoped<OrcamentosUseCases>();
         return services;
     }
 }

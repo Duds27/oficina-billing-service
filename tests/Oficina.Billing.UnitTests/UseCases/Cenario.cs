@@ -22,7 +22,12 @@ internal sealed class Cenario
             Options.Create(new OrcamentoOptions { Validade = TimeSpan.FromHours(48), UrlAprovacao = "https://oficina/orcamentos/{0}" }),
             NullLogger<ComandosSagaUseCases>.Instance);
         Pagamentos = new PagamentosUseCases(Repositorio, Gateway, Publicador, estorno, Relogio, NullLogger<PagamentosUseCases>.Instance);
+        Orcamentos = OrcamentosCom(Gateway);
     }
+
+    public OrcamentosUseCases OrcamentosCom(Oficina.Billing.Application.Abstractions.IGatewayPagamento gateway) =>
+        new(Repositorio, gateway, Publicador, Relogio, Options.Create(new PagamentosOptions { PrazoPagamento = TimeSpan.FromHours(48) }),
+            NullLogger<OrcamentosUseCases>.Instance);
 
     public RepositorioEmMemoria Repositorio { get; } = new();
     public PublicadorEmMemoria Publicador { get; } = new();
@@ -30,6 +35,7 @@ internal sealed class Cenario
     public FakeGatewayPagamento Gateway { get; } = new();
     public ComandosSagaUseCases Comandos { get; }
     public PagamentosUseCases Pagamentos { get; }
+    public OrcamentosUseCases Orcamentos { get; }
 
     public static GerarOrcamento Gerar(string? email = "maria@example.com") => new()
     {
