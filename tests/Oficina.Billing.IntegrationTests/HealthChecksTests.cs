@@ -25,14 +25,19 @@ public sealed class HealthChecksTests : IAsyncLifetime
         await _factory.DisposeAsync();
     }
 
-    [Theory]
-    [InlineData("/health/live")]
-    [InlineData("/health/ready")]
-    public async Task Health_check_responde_200(string rota)
+    [Fact]
+    public async Task Live_responde_200()
     {
-        var resposta = await _client.GetAsync(rota);
+        Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync("/health/live")).StatusCode);
+    }
 
-        Assert.Equal(HttpStatusCode.OK, resposta.StatusCode);
+    [Fact]
+    public async Task Ready_fica_200_com_o_banco_migrado_e_o_bus_no_ar()
+    {
+        // Readiness de verdade: depois das migrations, o bus ainda leva um instante para subir.
+        await Esperar.AteAsync(
+            async () => (await _client.GetAsync("/health/ready")).StatusCode == HttpStatusCode.OK ? "pronto" : null,
+            _ => true, "O /health/ready não ficou 200.");
     }
 
     [Fact]

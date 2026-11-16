@@ -1,3 +1,4 @@
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Oficina.Billing.Domain;
@@ -22,6 +23,11 @@ public sealed class BillingDbContext : DbContext
         modelBuilder.Entity<Orcamento>(ConfigurarOrcamento);
         modelBuilder.Entity<Pagamento>(ConfigurarPagamento);
         modelBuilder.Entity<Notificacao>(ConfigurarNotificacao);
+
+        // Outbox e inbox do MassTransit, no mesmo banco e na mesma transação das mudanças.
+        modelBuilder.AddInboxStateEntity();
+        modelBuilder.AddOutboxMessageEntity();
+        modelBuilder.AddOutboxStateEntity();
     }
 
     private static void ConfigurarOrcamento(EntityTypeBuilder<Orcamento> o)
