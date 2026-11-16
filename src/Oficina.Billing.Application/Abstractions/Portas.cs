@@ -58,3 +58,19 @@ public sealed class GatewayIndisponivelException : Exception
     {
     }
 }
+
+/// <summary>O gateway recusou a operação (erro 4xx). Não é transitório: tentar de novo não resolve.</summary>
+public sealed class GatewayRecusouException : Exception
+{
+    public GatewayRecusouException(string message) : base(message)
+    {
+    }
+
+    public GatewayRecusouException(string message, Exception innerException) : base(message, innerException)
+    {
+    }
+
+    public GatewayRecusouException()
+    {
+    }
+}

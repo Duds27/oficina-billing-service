@@ -57,12 +57,33 @@ public static class DependencyInjection
     {
         var gateway = configuration.GetSection(PagamentosOptions.Secao).Get<PagamentosOptions>()?.Gateway ?? "Fake";
 
+        // O webhook valida a assinatura com o segredo do Mercado Pago, qualquer que seja o gateway:
+        // sem segredo configurado, recusa tudo.
+        services.Configure<MercadoPagoOptions>(configuration.GetSection(MercadoPagoOptions.Secao));
+        services.AddSingleton<IValidadorWebhook, AssinaturaWebhook>();
+
         switch (gateway)
         {
             case "Fake":
                 services.AddSingleton<FakeGatewayPagamento>();
                 services.AddSingleton<IGatewayPagamento>(sp => sp.GetRequiredService<FakeGatewayPagamento>());
                 services.AddSingleton<ISimuladorPagamentos>(sp => sp.GetRequiredService<FakeGatewayPagamento>());
+                break;
+            case "MercadoPago":
+                var timeout = configuration.GetSection(MercadoPagoOptions.Secao).Get<MercadoPagoOptions>()?.TimeoutPorTentativa
+                    ?? TimeSpan.FromSeconds(5);
+                services.AddHttpClient<IGatewayPagamento, MercadoPagoGateway>()
+                    .AddStandardResilienceHandler(o =>
+                    {
+                        // Timeout por tentativa, retry com backoff exponencial em erro transitório
+                        // (5xx, 408, 429, falha de rede) e circuit breaker. Seguro porque as
+                        // chamadas que criam algo levam X-Idempotency-Key.
+                        o.AttemptTimeout.Timeout = timeout;
+                        o.Retry.MaxRetryAttempts = 3;
+                        o.Retry.Delay = TimeSpan.FromMilliseconds(300);
+                        o.TotalRequestTimeout.Timeout = timeout * 5;
+                        o.CircuitBreaker.SamplingDuration = timeout * 2 + TimeSpan.FromSeconds(1);
+                    });
                 break;
             default:
                 throw new InvalidOperationException($"Pagamentos:Gateway inválido: {gateway}. Use Fake ou MercadoPago.");

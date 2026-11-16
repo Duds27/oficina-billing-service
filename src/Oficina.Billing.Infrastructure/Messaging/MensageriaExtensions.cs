@@ -82,6 +82,7 @@ public static class MensageriaExtensions
                 // Erro de regra ou de dado inválido não se resolve tentando de novo.
                 r.Ignore<RegraDeNegocioException>();
                 r.Ignore<ArgumentException>();
+                r.Ignore<GatewayRecusouException>();
             });
 
             // Inbox (descarta a mensagem repetida pelo MessageId) + outbox das mensagens
