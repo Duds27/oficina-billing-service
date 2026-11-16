@@ -128,7 +128,7 @@ public sealed partial class OrcamentosUseCases
         {
             return Resultado<OrcamentoDto>.Falha(StatusResultado.Conflito, $"O orçamento da OS {orcamento.NumeroOS} mudou durante a operação. Consulte de novo.");
         }
-        catch (GatewayIndisponivelException ex)
+        catch (Exception ex) when (ex is GatewayIndisponivelException or GatewayRecusouException)
         {
             LogGatewayIndisponivel(ex, orcamento.NumeroOS);
             return Resultado<OrcamentoDto>.Falha(StatusResultado.Indisponivel, "O meio de pagamento não respondeu. Tente aprovar de novo em instantes.");
@@ -158,6 +158,6 @@ public sealed partial class OrcamentosUseCases
     [LoggerMessage(Level = LogLevel.Information, Message = "Orçamento da OS {NumeroOS} {Status} pelo cliente")]
     private partial void LogDecidido(string numeroOS, StatusOrcamento status);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "OS {NumeroOS}: gateway indisponível na aprovação; nada foi gravado")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "OS {NumeroOS}: falha no gateway na aprovação; nada foi gravado")]
     private partial void LogGatewayIndisponivel(Exception ex, string numeroOS);
 }
