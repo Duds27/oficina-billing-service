@@ -1,5 +1,7 @@
 # oficina-billing-service
 
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=Duds27_oficina-billing-service&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Duds27_oficina-billing-service) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Duds27_oficina-billing-service&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Duds27_oficina-billing-service)
+
 Microsserviço de **orçamento e pagamento** da Oficina Mecânica (FIAP 15SOAT, Fase 4).
 
 > **Estado atual:** [Etapa 3](https://github.com/Duds27/oficina-os-service/blob/main/docs/fase4/etapa-3-billing-service.md) implementada: domínio, PostgreSQL com outbox/inbox, consumers da saga, API de orçamento, Mercado Pago (Checkout Pro) com webhook e Terraform. Falta a validação no sandbox do Mercado Pago (spike S3), que precisa de uma conta de teste.
@@ -146,8 +148,11 @@ Depois do `apply`, preencha o secret do Mercado Pago com o token de teste e o se
 
 ## CI
 
-O `.github/workflows/ci.yml` roda em PR e push na `main`:
+O `.github/workflows/ci.yml` roda em PR e push na `main`, e o CD o reutiliza (`workflow_call`):
 
-- `build-test-quality` (*required check*): restore, build, testes com cobertura (`coverlet.runsettings`, que exclui só as migrations) e build da imagem Docker.
+- `build-test-quality` (*required check*): restore, build, testes com cobertura (`coverlet.runsettings`, que exclui só as migrations), SonarCloud, gate de cobertura e build da imagem Docker.
+- **Gate de cobertura:** o ReportGenerator junta a cobertura de todos os projetos de teste, e o passo falha se a de linhas ficar abaixo de 80%. O resumo vai para a página do run, e o relatório fica no artifact `coverage`.
+- **SonarCloud:** análise com `dotnet-sonarscanner`, cobertura em opencover e `sonar.qualitygate.wait=true`. Quality gate reprovado derruba o job. Em PR de fork ou do Dependabot, sem o `SONAR_TOKEN`, os passos do Sonar são pulados.
 - `terraform`: `fmt`, `validate` e `test` do `infra/`.
-- O gate de cobertura (80%) e o SonarCloud entram na [Etapa 4](https://github.com/Duds27/oficina-os-service/blob/main/docs/fase4/etapa-4-plataforma-cicd.md). Hoje a cobertura de linhas é de cerca de 96%.
+
+Cobertura de linhas em 2026-11-16: 95,8%, com 182 testes.

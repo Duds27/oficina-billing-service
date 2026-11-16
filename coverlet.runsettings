@@ -10,7 +10,8 @@
     <DataCollectors>
       <DataCollector friendlyName="XPlat code coverage">
         <Configuration>
-          <Format>cobertura</Format>
+          <!-- cobertura: ReportGenerator (gate de 80%); opencover: SonarCloud. -->
+          <Format>cobertura,opencover</Format>
           <Include>[Oficina.Billing.*]*</Include>
           <ExcludeByFile>**/Persistence/Migrations/*.cs</ExcludeByFile>
           <!-- Sem CompilerGeneratedAttribute: o corpo dos métodos async fica numa classe gerada pelo compilador. -->
