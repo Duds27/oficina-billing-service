@@ -1,6 +1,4 @@
 # Ambiente local do billing-service.
-# No esqueleto, a API só expõe health checks e Swagger. As variáveis de banco e
-# RabbitMQ passam a ser lidas na Etapa 3 (persistência e mensageria).
 services:
   billing-api:
     build: .
@@ -14,6 +12,9 @@ services:
       RabbitMq__Username: oficina
       RabbitMq__Password: oficina_dev
       Pagamentos__Gateway: Fake
+      # Prazos curtos, iguais aos da saga no compose do os-service (demonstração das compensações).
+      Orcamento__Validade: "00:02:00"
+      Pagamentos__PrazoPagamento: "00:02:00"
     depends_on:
       billing-db:
         condition: service_healthy
