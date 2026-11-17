@@ -1,8 +1,10 @@
 # oficina-billing-service
 
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=Duds27_oficina-billing-service&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Duds27_oficina-billing-service) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Duds27_oficina-billing-service&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Duds27_oficina-billing-service)
+
 Microsserviço de **orçamento e pagamento** da Oficina Mecânica (FIAP 15SOAT, Fase 4).
 
-> **Estado atual:** [Etapa 3](https://github.com/Duds27/oficina-os-service/blob/main/docs/fase4/etapa-3-billing-service.md) implementada: domínio, PostgreSQL com outbox/inbox, consumers da saga, API de orçamento, Mercado Pago (Checkout Pro) com webhook e Terraform. Falta a validação no sandbox do Mercado Pago (spike S3), que precisa de uma conta de teste.
+> **Estado atual:** [Etapa 3](https://github.com/Duds27/oficina-os-service/blob/main/docs/fase4/etapa-3-billing-service.md) concluída: domínio, PostgreSQL com outbox/inbox, consumers da saga, API de orçamento, Mercado Pago (Checkout Pro) com webhook e Terraform. Na [Etapa 4](https://github.com/Duds27/oficina-os-service/blob/main/docs/fase4/etapa-4-plataforma-cicd.md) entraram SonarCloud e o gate de cobertura no CI, além dos manifestos Kubernetes. O sandbox do Mercado Pago (spike S3) também foi para a Etapa 4: ele depende da rota pública do webhook no API Gateway.
 
 ## Responsabilidades
 
@@ -144,10 +146,63 @@ terraform apply -var="environment=$ENV" -var="state_bucket=$TF_STATE_BUCKET"
 
 Depois do `apply`, preencha o secret do Mercado Pago com o token de teste e o segredo do webhook. `terraform test` roda sem conta AWS (provider mockado).
 
+## CD
+
+O `.github/workflows/cd.yml` faz o deploy no EKS a cada push em `homolog` ou `prod`. Antes, chama o
+CI (`workflow_call`), e o deploy só roda se testes, cobertura e quality gate passarem no mesmo
+commit. O job usa o Environment com o nome da branch. Em `prod`, a aprovação fica nas
+regras do Environment.
+
+1. Confere as variables do Environment e para com a lista do que falta.
+2. Builda e publica a imagem no ECR com a tag do commit.
+3. Monta o Secret `billing-service-secrets` a partir do Secrets Manager, com os valores mascarados no log. O secret do Mercado Pago nasce vazio: sem valor, o pod fica com o gateway Fake.
+4. Troca a imagem e os placeholders do overlay `aws`. Placeholder sem valor derruba o deploy antes do `apply`.
+5. `kubectl apply`, anota o pod com o hash do Secret (credencial trocada sem mudança de código também
+   reinicia os pods) e espera o rollout (300 s).
+6. Smoke test: um pod com `curl` chama `http://billing-service/health/ready` dentro do namespace `oficina-billing`.
+
+| Tipo (Environment `homolog`/`prod`) | Nome | De onde vem |
+| --- | --- | --- |
+| Variable | `AWS_REGION` | `us-east-1` |
+| Variable | `ECR_REPOSITORY` | saída `ecr_repository_url` do `infra/` (só o nome do repositório) |
+| Variable | `EKS_CLUSTER_NAME` | saída `cluster_name` do `oficina-infra-k8s` |
+| Variable | `TARGET_GROUP_ARN` | saída `target_group_arns["billing"]` do `oficina-infra-k8s` |
+| Variable | `RABBITMQ_SECRET_ID` | saída `rabbitmq_secret_ids["billing"]` do `oficina-infra-k8s` |
+| Variable | `JWT_SECRET_ID` | secret `{"key"}` da chave do JWT, o mesmo da Lambda |
+| Variable | `DB_SECRET_ID` | saída `db_secret_name` do `infra/` |
+| Variable | `MP_SECRET_ID` | saída `mercadopago_secret_name` do `infra/` |
+| Variable | `API_BASE_URL` | saída `api_endpoint` do `oficina-lambda-auth` (link de aprovação e webhook) |
+| Secret | `AWS_DEPLOY_ROLE_ARN` | role do GitHub OIDC (a mesma da Fase 3) |
+| Secret | `SONAR_TOKEN` | SonarCloud (já cadastrado na Etapa 0) |
+| Secret | `NEW_RELIC_LICENSE_KEY` | opcional; sem ela, o agente fica desligado |
+
+### Infra (`infra.yml`)
+
+Para mudanças em `infra/`:
+
+- **PR na `main`:** `fmt`, `validate` e `plan` de homolog, com o plano num comentário do PR,
+  atualizado a cada push.
+- **Push na `main`:** `apply` em homolog, depois da aprovação no Environment `infra`
+  (*required reviewers*).
+- **Manual:** `plan` ou `apply` no ambiente escolhido. O `apply` também passa pelo Environment `infra`.
+
+Usa as variables `AWS_REGION`, `TF_STATE_BUCKET` e `TF_LOCK_TABLE` e o secret `AWS_DEPLOY_ROLE_ARN`
+**do repositório**, não de um Environment. O estado do `infra-k8s` do mesmo ambiente precisa existir.
+
+## Kubernetes
+
+Os manifestos ficam em [`k8s/`](k8s/README.md): a base, o overlay `local` para o kind e o `aws`
+para o EKS. O serviço roda no namespace `oficina-billing` e usa o RabbitMQ em
+`rabbitmq.messaging.svc.cluster.local`. No kind, o overlay local do `oficina-os-service` sobe
+esse broker (aplique aquele primeiro).
+
 ## CI
 
-O `.github/workflows/ci.yml` roda em PR e push na `main`:
+O `.github/workflows/ci.yml` roda em PR e push na `main`, e o CD o reutiliza (`workflow_call`):
 
-- `build-test-quality` (*required check*): restore, build, testes com cobertura (`coverlet.runsettings`, que exclui só as migrations) e build da imagem Docker.
+- `build-test-quality` (*required check*): restore, build, testes com cobertura (`coverlet.runsettings`, que exclui só as migrations), SonarCloud, gate de cobertura e build da imagem Docker.
+- **Gate de cobertura:** o ReportGenerator junta a cobertura de todos os projetos de teste, e o passo falha se a de linhas ficar abaixo de 80%. O resumo vai para a página do run, e o relatório fica no artifact `coverage`.
+- **SonarCloud:** análise com `dotnet-sonarscanner`, cobertura em opencover e `sonar.qualitygate.wait=true`. Quality gate reprovado derruba o job. Em PR de fork ou do Dependabot, sem o `SONAR_TOKEN`, os passos do Sonar são pulados.
 - `terraform`: `fmt`, `validate` e `test` do `infra/`.
-- O gate de cobertura (80%) e o SonarCloud entram na [Etapa 4](https://github.com/Duds27/oficina-os-service/blob/main/docs/fase4/etapa-4-plataforma-cicd.md). Hoje a cobertura de linhas é de cerca de 96%.
+
+Cobertura de linhas em 2026-11-16: 95,8%, com 182 testes.
