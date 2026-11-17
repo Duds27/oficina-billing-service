@@ -4,7 +4,7 @@
 
 Microsserviço de **orçamento e pagamento** da Oficina Mecânica (FIAP 15SOAT, Fase 4).
 
-> **Estado atual:** [Etapa 3](https://github.com/Duds27/oficina-os-service/blob/main/docs/fase4/etapa-3-billing-service.md) concluída: domínio, PostgreSQL com outbox/inbox, consumers da saga, API de orçamento, Mercado Pago (Checkout Pro) com webhook e Terraform. Na [Etapa 4](https://github.com/Duds27/oficina-os-service/blob/main/docs/fase4/etapa-4-plataforma-cicd.md) entraram SonarCloud e o gate de cobertura no CI, além dos manifestos Kubernetes. O sandbox do Mercado Pago (spike S3) também foi para a Etapa 4: ele depende da rota pública do webhook no API Gateway.
+> **Estado atual (Fase 4):** implementado e validado fora da AWS. Etapas 1 a 5 concluídas; a implantação no EKS, o New Relic com dados e o sandbox do Mercado Pago estão na [Etapa 6](https://github.com/Duds27/oficina-os-service/blob/main/docs/fase4/etapa-6-documentacao-entrega.md#60-implantação-na-aws-e-validação-no-new-relic).
 
 ## Responsabilidades
 
@@ -19,6 +19,33 @@ Microsserviço de **orçamento e pagamento** da Oficina Mecânica (FIAP 15SOAT, 
 - A fila de execução: é do `execution-service`.
 
 Os dados que ele precisa chegam dentro das mensagens. Ver os [contratos de mensagens](https://github.com/Duds27/oficina-os-service/blob/main/docs/contratos-mensagens.md).
+
+## Arquitetura do serviço
+
+```mermaid
+flowchart LR
+  subgraph entrada[Entrada]
+    api["API REST<br/>/api/orcamentos, /api/pagamentos"]
+    webhook["POST /webhooks/mercadopago<br/>(assinatura x-signature)"]
+    filas["Consumers<br/>billing-gerar-orcamento<br/>billing-cancelar-orcamento<br/>billing-estornar-pagamento"]
+  end
+  subgraph app[Application]
+    casos["Casos de uso<br/>orçamento, decisão, pagamento, estorno"]
+  end
+  dominio["Domain<br/>Orcamento, Pagamento"]
+  subgraph infra[Infrastructure]
+    ef[("PostgreSQL 16<br/>+ outbox/inbox")]
+    gateway["Gateway de pagamento<br/>Mercado Pago | Fake"]
+    bus["MassTransit<br/>(publish pelo outbox)"]
+  end
+  api & webhook & filas --> casos --> dominio
+  casos --> ef & gateway & bus
+  bus -->|eventos| mq[("RabbitMQ")]
+  gateway --> mp["Mercado Pago"]
+```
+
+Clean Architecture: o domínio não conhece banco nem broker. A Application define as portas (repositório,
+publicador, gateway), e a Infrastructure as implementa.
 
 ## Fluxo
 
@@ -46,7 +73,25 @@ Regras que valem saber:
 - **Estorno automático** (regras 1, 2 e 3 da seção 5): pagamento aprovado depois do cancelamento do orçamento, ou depois de uma recusa, é estornado sozinho e publica `PagamentoEstornado` (a saga, já encerrada, ignora).
 - **Estorno repetido** não estorna de novo, mas responde `PagamentoEstornado` de novo: a saga espera essa resposta em `AguardandoEstorno`.
 
+## Mensagens
+
+| Direção | Mensagem | Fila / exchange | Quando |
+| --- | --- | --- | --- |
+| Consome | `GerarOrcamento` | `billing-gerar-orcamento` | Diagnóstico concluído: gera e envia o orçamento |
+| Consome | `CancelarOrcamento` | `billing-cancelar-orcamento` | C2: cancela o orçamento e o pagamento pendente |
+| Consome | `EstornarPagamento` | `billing-estornar-pagamento` | C3: estorna no Mercado Pago |
+| Consome | `ProcessarNotificacaoPagamento` | `billing-processar-notificacao-pagamento` | Interno: notificação do webhook, gravada pelo outbox |
+| Consome | `Fault<EstornarPagamento>` | `billing-falhas-de-estorno` | Estorno que falhou de vez: alerta crítico |
+| Publica | `OrcamentoGerado` | `oficina.orcamento-gerado.v1` | Orçamento enviado ao cliente |
+| Publica | `OrcamentoAprovado` / `OrcamentoRecusado` | `oficina.orcamento-aprovado.v1` / `oficina.orcamento-recusado.v1` | Decisão do cliente (o aprovado leva o link de pagamento) |
+| Publica | `PagamentoConfirmado` / `PagamentoRecusado` | `oficina.pagamento-confirmado.v1` / `oficina.pagamento-recusado.v1` | Resultado no Mercado Pago |
+| Publica | `PagamentoEstornado` | `oficina.pagamento-estornado.v1` | Estorno concluído |
+
+Contratos completos: [`contratos-mensagens.md`](https://github.com/Duds27/oficina-os-service/blob/main/docs/contratos-mensagens.md).
+
 ## API
+
+Swagger em `/swagger` no ambiente de desenvolvimento. O contrato completo está versionado em [`docs/openapi.json`](docs/openapi.json), conferido no CI.
 
 | Método | Rota | Quem |
 | --- | --- | --- |
@@ -79,6 +124,33 @@ Se o estorno falhar de vez (retries esgotados, ou o pagamento não pode ser esto
 1. A mensagem vai para `billing-estornar-pagamento_error`, e a saga fica em `AguardandoEstorno`.
 2. O billing loga um **alerta crítico** (`ALERTA: estorno do pagamento ... falhou de vez`), com a OS, o pagamento e o CorrelationId. No New Relic, esse log vira alerta (Etapa 5).
 3. **O que fazer:** corrigir a causa (ex.: credencial do Mercado Pago) e mover a mensagem de `billing-estornar-pagamento_error` para `billing-estornar-pagamento` na interface do RabbitMQ. O reprocessamento é seguro: o estorno usa a mesma chave de idempotência.
+
+## Saga: estratégia e justificativa
+
+A OS atravessa os 3 serviços numa saga **orquestrada**:
+
+- **o os-service guarda o estado:** é a máquina de estados do MassTransit, gravada no MySQL;
+- **o os-service manda os comandos:** um para cada passo;
+- **os outros dois só respondem:** o billing e o execution executam o comando e publicam eventos, sem conhecer a saga.
+
+**Por quê** ([ADR-006](https://github.com/Duds27/oficina-os-service/blob/main/docs/architecture/adrs/ADR-006-saga-orquestrada.md)):
+
+- o fluxo e as compensações ficam num lugar só;
+- dá para responder "em que passo esta OS parou?" (`GET /api/ordens-servico/{id}/saga`);
+- o fluxo inteiro pode ser testado de ponta a ponta.
+
+Com coreografia, a lógica de compensação ficaria espalhada por três repositórios.
+
+**Papel deste serviço:** participante. Recebe `GerarOrcamento`, `CancelarOrcamento` e `EstornarPagamento` e responde com eventos. O estorno é a compensação da C3, e o cancelamento do orçamento é a da C2.
+
+**Compensações:**
+
+- C1: orçamento recusado;
+- C2: pagamento recusado ou prazo vencido;
+- C3: execução rejeitada, com estorno.
+
+Os diagramas de cada uma estão nos [diagramas de sequência](https://github.com/Duds27/oficina-os-service/blob/main/docs/architecture/sequence-diagrams.md). O
+catálogo das mensagens, com as regras de eventos fora de ordem, está nos [contratos](https://github.com/Duds27/oficina-os-service/blob/main/docs/contratos-mensagens.md).
 
 ## Configuração
 
@@ -229,3 +301,24 @@ O `.github/workflows/ci.yml` roda em PR e push na `main`, e o CD o reutiliza (`w
 - `terraform`: `fmt`, `validate` e `test` do `infra/`.
 
 Cobertura de linhas em 2026-11-16: 95,8%, com 182 testes.
+
+### Pipeline
+
+```mermaid
+flowchart LR
+  pr["PR para a main"] --> ci["CI: build, testes (unitários e integração com Testcontainers),<br/>cobertura ≥ 80%, SonarCloud, OpenAPI e docker build"]
+  ci -->|checks obrigatórios + 1 aprovação| main["merge na main"]
+  main -->|PR main → homolog| homolog["push em homolog"]
+  homolog --> cd["CD: CI de novo → imagem no ECR → Secret do Secrets Manager<br/>→ kubectl apply (overlay aws) → rollout → smoke test"]
+  cd --> eks[("EKS")]
+  pr -.->|mudou infra/| plan["infra.yml: fmt, validate e plan comentado no PR"]
+  main -.->|mudou infra/| apply["infra.yml: apply com aprovação (Environment infra)"]
+```
+
+## Evidências de cobertura
+
+![Cobertura de linhas](docs/evidencias/badge_linecoverage.svg) ![Cobertura de ramos](docs/evidencias/badge_branchcoverage.svg)
+
+O relatório do CI da `main`, consolidado pelo ReportGenerator, está em [`docs/evidencias`](docs/evidencias/README.md),
+com o run e o commit de origem. O SonarCloud está em [Duds27_oficina-billing-service](https://sonarcloud.io/summary/new_code?id=Duds27_oficina-billing-service).
+O gate do CI derruba o build abaixo de 80% de linhas.
