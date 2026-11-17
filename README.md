@@ -146,6 +146,49 @@ terraform apply -var="environment=$ENV" -var="state_bucket=$TF_STATE_BUCKET"
 
 Depois do `apply`, preencha o secret do Mercado Pago com o token de teste e o segredo do webhook. `terraform test` roda sem conta AWS (provider mockado).
 
+## CD
+
+O `.github/workflows/cd.yml` faz o deploy no EKS a cada push em `homolog` ou `prod`. Antes, chama o
+CI (`workflow_call`), e o deploy só roda se testes, cobertura e quality gate passarem no mesmo
+commit. O job usa o Environment com o nome da branch. Em `prod`, a aprovação fica nas
+regras do Environment.
+
+1. Confere as variables do Environment e para com a lista do que falta.
+2. Builda e publica a imagem no ECR com a tag do commit.
+3. Monta o Secret `billing-service-secrets` a partir do Secrets Manager, com os valores mascarados no log. O secret do Mercado Pago nasce vazio: sem valor, o pod fica com o gateway Fake.
+4. Troca a imagem e os placeholders do overlay `aws`. Placeholder sem valor derruba o deploy antes do `apply`.
+5. `kubectl apply`, anota o pod com o hash do Secret (credencial trocada sem mudança de código também
+   reinicia os pods) e espera o rollout (300 s).
+6. Smoke test: um pod com `curl` chama `http://billing-service/health/ready` dentro do namespace `oficina-billing`.
+
+| Tipo (Environment `homolog`/`prod`) | Nome | De onde vem |
+| --- | --- | --- |
+| Variable | `AWS_REGION` | `us-east-1` |
+| Variable | `ECR_REPOSITORY` | saída `ecr_repository_url` do `infra/` (só o nome do repositório) |
+| Variable | `EKS_CLUSTER_NAME` | saída `cluster_name` do `oficina-infra-k8s` |
+| Variable | `TARGET_GROUP_ARN` | saída `target_group_arns["billing"]` do `oficina-infra-k8s` |
+| Variable | `RABBITMQ_SECRET_ID` | saída `rabbitmq_secret_ids["billing"]` do `oficina-infra-k8s` |
+| Variable | `JWT_SECRET_ID` | secret `{"key"}` da chave do JWT, o mesmo da Lambda |
+| Variable | `DB_SECRET_ID` | saída `db_secret_name` do `infra/` |
+| Variable | `MP_SECRET_ID` | saída `mercadopago_secret_name` do `infra/` |
+| Variable | `API_BASE_URL` | saída `api_endpoint` do `oficina-lambda-auth` (link de aprovação e webhook) |
+| Secret | `AWS_DEPLOY_ROLE_ARN` | role do GitHub OIDC (a mesma da Fase 3) |
+| Secret | `SONAR_TOKEN` | SonarCloud (já cadastrado na Etapa 0) |
+| Secret | `NEW_RELIC_LICENSE_KEY` | opcional; sem ela, o agente fica desligado |
+
+### Infra (`infra.yml`)
+
+Para mudanças em `infra/`:
+
+- **PR na `main`:** `fmt`, `validate` e `plan` de homolog, com o plano num comentário do PR,
+  atualizado a cada push.
+- **Push na `main`:** `apply` em homolog, depois da aprovação no Environment `infra`
+  (*required reviewers*).
+- **Manual:** `plan` ou `apply` no ambiente escolhido. O `apply` também passa pelo Environment `infra`.
+
+Usa as variables `AWS_REGION`, `TF_STATE_BUCKET` e `TF_LOCK_TABLE` e o secret `AWS_DEPLOY_ROLE_ARN`
+**do repositório**, não de um Environment. O estado do `infra-k8s` do mesmo ambiente precisa existir.
+
 ## Kubernetes
 
 Os manifestos ficam em [`k8s/`](k8s/README.md): a base, o overlay `local` para o kind e o `aws`
