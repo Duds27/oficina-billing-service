@@ -79,13 +79,16 @@ public sealed partial class PagamentosUseCases
             case ResultadoConfirmacao.Confirmado when orcamento.Status == StatusOrcamento.Cancelado:
                 // Regra 1: pagou depois do cancelamento.
                 await _estorno.EstornarAsync(orcamento, pagamento, "pagamento aprovado depois do cancelamento", agora, cancellationToken);
+                MetricasBilling.Pagamento("tardio");
                 return true;
             case ResultadoConfirmacao.Confirmado:
                 await _publicador.PublicarAsync(FabricaMensagens.PagamentoConfirmado(orcamento, pagamento, agora), cancellationToken);
+                MetricasBilling.Pagamento("aprovado");
                 return true;
             case ResultadoConfirmacao.Tardio:
                 // Regras 1 e 3: aprovado depois de recusado ou cancelado.
                 await _estorno.EstornarAsync(orcamento, pagamento, "pagamento aprovado depois de encerrado", agora, cancellationToken);
+                MetricasBilling.Pagamento("tardio");
                 return true;
             default:
                 return false; // Notificação repetida.
@@ -98,6 +101,7 @@ public sealed partial class PagamentosUseCases
             return false;
 
         await _publicador.PublicarAsync(FabricaMensagens.PagamentoRecusado(orcamento, pagamento, agora), cancellationToken);
+        MetricasBilling.Pagamento("recusado");
         return true;
     }
 

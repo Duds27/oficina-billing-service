@@ -174,7 +174,8 @@ regras do Environment.
 | Variable | `API_BASE_URL` | saída `api_endpoint` do `oficina-lambda-auth` (link de aprovação e webhook) |
 | Secret | `AWS_DEPLOY_ROLE_ARN` | role do GitHub OIDC (a mesma da Fase 3) |
 | Secret | `SONAR_TOKEN` | SonarCloud (já cadastrado na Etapa 0) |
-| Secret | `NEW_RELIC_LICENSE_KEY` | opcional; sem ela, o agente fica desligado |
+| Secret | `NEW_RELIC_LICENSE_KEY` | opcional; com ela, o CD liga o OpenTelemetry → New Relic (OTLP) |
+| Variable | `NEW_RELIC_OTLP_ENDPOINT` | opcional; padrão `https://otlp.nr-data.net:4317` (conta na UE: `https://otlp.eu01.nr-data.net:4317`) |
 
 ### Infra (`infra.yml`)
 
@@ -188,6 +189,28 @@ Para mudanças em `infra/`:
 
 Usa as variables `AWS_REGION`, `TF_STATE_BUCKET` e `TF_LOCK_TABLE` e o secret `AWS_DEPLOY_ROLE_ARN`
 **do repositório**, não de um Environment. O estado do `infra-k8s` do mesmo ambiente precisa existir.
+
+## Observabilidade
+
+O OpenTelemetry .NET (`src/Oficina.Billing.API/Observabilidade/Telemetria.cs`) exporta traces, métricas e logs por
+OTLP quando `OTEL_EXPORTER_OTLP_ENDPOINT` existe. Sem ele, nada sai, e é assim nos testes e no compose
+sem coletor. No EKS, o CD liga o envio para o New Relic quando há license key.
+
+- **Traces:** ASP.NET Core (fora `/health` e `/swagger`), HttpClient, MassTransit (publish, send e
+  consume, com o contexto propagado nos headers da mensagem) e Npgsql (comandos no PostgreSQL). A chamada ao Mercado Pago aparece pelo HttpClient, dentro do trace da aprovação ou do consumo da notificação.
+- **Métricas:** HTTP, runtime do .NET, MassTransit e as de negócio do Meter `Oficina.Billing`:
+  - `orcamento.decisao{resultado}`: `aprovado`, `recusado` ou `expirado`;
+  - `pagamento.resultado{status}`: `aprovado`, `recusado` ou `tardio` (aprovado depois de encerrado, estornado sozinho);
+  - `pagamento.estorno`.
+- **Logs:** o Serilog manda os logs por OTLP, ligados ao trace. Todo log tem `trace.id` e `span.id`, e
+  os do consumo de mensagens têm `MessageType`, `CorrelationId` e `NumeroOS` (filtro do MassTransit).
+  Filtrar por `NumeroOS` no New Relic mostra a OS nos 3 serviços.
+- **Resource:** `service.name` = `billing-service`, `service.version` = SHA do commit (`SERVICE_VERSION`, passado
+  pelo CD no build) e `deployment.environment` (`Observabilidade__Ambiente`).
+
+Para conferir local, use o perfil `observabilidade` do `docker-compose.full.yml` do os-service, que sobe
+um OpenTelemetry Collector com Jaeger. O `scripts/e2e_observabilidade.py` de lá confere trace, métricas e
+logs.
 
 ## Kubernetes
 

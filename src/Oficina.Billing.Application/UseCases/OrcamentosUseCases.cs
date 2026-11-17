@@ -95,6 +95,7 @@ public sealed partial class OrcamentosUseCases
             if (orcamento.ExpirarSeVencido(agora))
             {
                 await _repositorio.SalvarAsync(cancellationToken);
+                MetricasBilling.Decisao("expirado");
                 return Resultado<OrcamentoDto>.Falha(StatusResultado.Conflito, $"O orçamento da OS {orcamento.NumeroOS} venceu em {orcamento.ValidoAte:u}.");
             }
 
@@ -117,6 +118,7 @@ public sealed partial class OrcamentosUseCases
             }
 
             await _repositorio.SalvarAsync(cancellationToken);
+            MetricasBilling.Decisao(aprovado ? "aprovado" : "recusado");
             LogDecidido(orcamento.NumeroOS, orcamento.Status);
             return Resultado<OrcamentoDto>.Ok(orcamento.ParaDto(pagamento));
         }
