@@ -1,0 +1,51 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Overlay LOCAL (kind): imagem local, Secret de desenvolvimento e o banco no próprio cluster.
+#   docker build -t oficina-billing-service:local .
+#   kind load docker-image oficina-billing-service:local --name <cluster>
+#   kubectl apply -k k8s/overlays/local
+# Pré-requisito: o overlay local do oficina-os-service, que sobe o RabbitMQ no namespace
+# messaging (mesmo DNS do EKS). Ordem: os-service → billing-service → execution-service.
+#
+# Sem "namespace:" aqui: a base já põe os recursos dela em oficina-billing, e os daqui dizem o seu.
+resources:
+  - ../../base
+  - namespace.yaml
+  - secret.yaml
+  - postgres.yaml
+
+images:
+  - name: oficina-billing-service
+    newTag: local
+
+patches:
+  # 1 réplica no kind; o HPA da base continua (2 a 5) para a demonstração de escala.
+  - target:
+      kind: Deployment
+      name: billing-service
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: billing-service
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+  - target:
+      kind: ConfigMap
+      name: billing-service-config
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: billing-service-config
+      data:
+        ASPNETCORE_ENVIRONMENT: "Development"
+        Orcamento__UrlAprovacao: "http://localhost:8082/api/orcamentos/{0}"
+        # Prazos curtos, como no compose do os-service.
+        Orcamento__Validade: "00:02:00"
+        Pagamentos__PrazoPagamento: "00:02:00"

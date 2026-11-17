@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: billing-service-config
+  labels:
+    app: billing-service
+data:
+  # Configuração não sensível. O .NET usa "__" para aninhar chaves (RabbitMq:Host → RabbitMq__Host).
+  ASPNETCORE_ENVIRONMENT: "Production"
+  ASPNETCORE_URLS: "http://+:8080"
+  # GC de workstation: bem menos memória por pod que o de servidor, padrão do ASP.NET.
+  DOTNET_gcServer: "0"
+  # Broker compartilhado (namespace messaging). Usuário e senha vêm do Secret.
+  RabbitMq__Host: "rabbitmq.messaging.svc.cluster.local"
+  RabbitMq__VirtualHost: "oficina"
+  Jwt__Issuer: "OficinaMecanicaBackend"
+  Jwt__Audience: "OficinaMecanicaBackend"
+  Orcamento__Validade: "2.00:00:00"
+  Pagamentos__PrazoPagamento: "2.00:00:00"
+  # Fake até o sandbox do Mercado Pago (Etapa 4, 4.9). Com MercadoPago, o token e o
+  # segredo do webhook vêm do Secret, montado pelo CD a partir de MP_SECRET_ID.
+  Pagamentos__Gateway: "Fake"

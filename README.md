@@ -4,7 +4,7 @@
 
 Microsserviço de **orçamento e pagamento** da Oficina Mecânica (FIAP 15SOAT, Fase 4).
 
-> **Estado atual:** [Etapa 3](https://github.com/Duds27/oficina-os-service/blob/main/docs/fase4/etapa-3-billing-service.md) implementada: domínio, PostgreSQL com outbox/inbox, consumers da saga, API de orçamento, Mercado Pago (Checkout Pro) com webhook e Terraform. Falta a validação no sandbox do Mercado Pago (spike S3), que precisa de uma conta de teste.
+> **Estado atual:** [Etapa 3](https://github.com/Duds27/oficina-os-service/blob/main/docs/fase4/etapa-3-billing-service.md) concluída: domínio, PostgreSQL com outbox/inbox, consumers da saga, API de orçamento, Mercado Pago (Checkout Pro) com webhook e Terraform. Na [Etapa 4](https://github.com/Duds27/oficina-os-service/blob/main/docs/fase4/etapa-4-plataforma-cicd.md) entraram SonarCloud e o gate de cobertura no CI, além dos manifestos Kubernetes. O sandbox do Mercado Pago (spike S3) também foi para a Etapa 4: ele depende da rota pública do webhook no API Gateway.
 
 ## Responsabilidades
 
@@ -145,6 +145,13 @@ terraform apply -var="environment=$ENV" -var="state_bucket=$TF_STATE_BUCKET"
 ```
 
 Depois do `apply`, preencha o secret do Mercado Pago com o token de teste e o segredo do webhook. `terraform test` roda sem conta AWS (provider mockado).
+
+## Kubernetes
+
+Os manifestos ficam em [`k8s/`](k8s/README.md): a base, o overlay `local` para o kind e o `aws`
+para o EKS. O serviço roda no namespace `oficina-billing` e usa o RabbitMQ em
+`rabbitmq.messaging.svc.cluster.local`. No kind, o overlay local do `oficina-os-service` sobe
+esse broker (aplique aquele primeiro).
 
 ## CI
 
