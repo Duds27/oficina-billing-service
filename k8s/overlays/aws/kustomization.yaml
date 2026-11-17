@@ -43,6 +43,10 @@ patches:
       metadata:
         name: billing-service-config
       data:
+        # OpenTelemetry → New Relic. O endpoint e a license key vêm do Secret, montado pelo CD.
+        Observabilidade__Ambiente: "__AMBIENTE__"
+        OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: "delta"
+        OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT: "4095"
         # __API_BASE_URL__: URL do API Gateway (saída api_endpoint do oficina-lambda-auth), trocada no CD.
         Orcamento__UrlAprovacao: "__API_BASE_URL__/api/orcamentos/{0}"
         Pagamentos__MercadoPago__NotificationUrl: "__API_BASE_URL__/webhooks/mercadopago"

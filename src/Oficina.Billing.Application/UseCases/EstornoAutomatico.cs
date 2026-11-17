@@ -40,6 +40,7 @@ public sealed partial class EstornoAutomatico
         LogEstornado(orcamento.NumeroOS, pagamento.Id, pagamento.Valor, motivo);
 
         await _publicador.PublicarAsync(FabricaMensagens.PagamentoEstornado(orcamento, pagamento, agora), cancellationToken);
+        MetricasBilling.Estorno.Add(1);
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "OS {NumeroOS}: pagamento {PagamentoId} de {Valor} estornado ({Motivo})")]

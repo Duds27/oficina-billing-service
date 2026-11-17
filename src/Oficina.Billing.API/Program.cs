@@ -6,6 +6,7 @@ using Microsoft.OpenApi.Models;
 using Oficina.Billing.API.Middleware;
 using Oficina.Billing.Application;
 using Oficina.Billing.Infrastructure;
+using Oficina.Billing.API.Observabilidade;
 using Serilog;
 using Serilog.Formatting.Compact;
 
@@ -27,7 +28,12 @@ try
         .ReadFrom.Services(services)
         .Enrich.FromLogContext()
         .Enrich.WithProperty("Service", ServiceName)
+        // trace.id/span.id em todo log e, com endpoint OTLP, o envio dos logs (Etapa 5).
+        .ComTelemetria(ctx.Configuration, ctx.HostingEnvironment)
         .WriteTo.Console(new CompactJsonFormatter()));
+
+    // OpenTelemetry: traces e métricas, exportados por OTLP quando OTEL_EXPORTER_OTLP_ENDPOINT existe.
+    builder.Services.AddObservabilidade(builder.Configuration, builder.Environment);
 
     // Clean Architecture: composição das camadas
     builder.Services.AddApplication();
