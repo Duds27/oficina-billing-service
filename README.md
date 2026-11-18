@@ -207,7 +207,7 @@ Com os três serviços no ar, a saga vai do início ao fim: OS aberta → diagn�
 
 ## Infra (Terraform)
 
-`infra/` cria o RDS PostgreSQL 16 (privado, só os nós do EKS acessam), os secrets `billing/db` e `billing/mercadopago` e o ECR. O estado fica no bucket S3 da Fase 3 (`billing-service/<ambiente>/terraform.tfstate`).
+`infra/` cria o RDS PostgreSQL 16 (privado, só os nós do EKS acessam), os secrets `billing/db` e `billing/mercadopago` e o ECR. O estado fica no bucket do Terraform (`TF_STATE_BUCKET`, chave `billing-service/<ambiente>/terraform.tfstate`).
 
 ```bash
 cd infra
@@ -235,7 +235,7 @@ regras do Environment.
 
 | Tipo (Environment `homolog`/`prod`) | Nome | De onde vem |
 | --- | --- | --- |
-| Variable | `AWS_REGION` | `us-east-1` |
+| Variable | `AWS_REGION` | `us-east-2` (a única região liberada na conta do grupo) |
 | Variable | `ECR_REPOSITORY` | saída `ecr_repository_url` do `infra/` (só o nome do repositório) |
 | Variable | `EKS_CLUSTER_NAME` | saída `cluster_name` do `oficina-infra-k8s` |
 | Variable | `TARGET_GROUP_ARN` | saída `target_group_arns["billing"]` do `oficina-infra-k8s` |
@@ -244,7 +244,8 @@ regras do Environment.
 | Variable | `DB_SECRET_ID` | saída `db_secret_name` do `infra/` |
 | Variable | `MP_SECRET_ID` | saída `mercadopago_secret_name` do `infra/` |
 | Variable | `API_BASE_URL` | saída `api_endpoint` do `oficina-lambda-auth` (link de aprovação e webhook) |
-| Secret | `AWS_DEPLOY_ROLE_ARN` | role do GitHub OIDC (a mesma da Fase 3) |
+| Secret | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | chave do usuário IAM do CI, na conta sem OIDC ([README do infra-k8s](https://github.com/Duds27/oficina-infra-k8s#conta-aws)). O usuário precisa ser admin do cluster (`cluster_admin_arns`) |
+| Secret | `AWS_DEPLOY_ROLE_ARN` | alternativa às chaves, numa conta que permita o provider OIDC: role do GitHub OIDC. Cadastre só uma das duas formas |
 | Secret | `SONAR_TOKEN` | SonarCloud (já cadastrado na Etapa 0) |
 | Secret | `NEW_RELIC_LICENSE_KEY` | opcional; com ela, o CD liga o OpenTelemetry → New Relic (OTLP) |
 | Variable | `NEW_RELIC_OTLP_ENDPOINT` | opcional; padrão `https://otlp.nr-data.net:4317` (conta na UE: `https://otlp.eu01.nr-data.net:4317`) |
@@ -259,8 +260,8 @@ Para mudanças em `infra/`:
   (*required reviewers*).
 - **Manual:** `plan` ou `apply` no ambiente escolhido. O `apply` também passa pelo Environment `infra`.
 
-Usa as variables `AWS_REGION`, `TF_STATE_BUCKET` e `TF_LOCK_TABLE` e o secret `AWS_DEPLOY_ROLE_ARN`
-**do repositório**, não de um Environment. O estado do `infra-k8s` do mesmo ambiente precisa existir.
+Usa as variables `AWS_REGION`, `TF_STATE_BUCKET` e `TF_LOCK_TABLE` e a credencial da AWS (as chaves de
+acesso ou o `AWS_DEPLOY_ROLE_ARN`) **do repositório**, não de um Environment. O estado do `infra-k8s` do mesmo ambiente precisa existir.
 
 ## Observabilidade
 
